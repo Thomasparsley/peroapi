@@ -1,0 +1,79 @@
+scalar DateTime
+scalar JSON
+
+enum Role {
+  ADMIN
+  USER
+  GUEST
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+input CreateUserInput {
+  name: String!
+  email: String!
+  role: Role
+}
+
+input UpdateUserInput {
+  name: String
+  email: String
+  role: Role
+}
+
+input OrderFilterInput {
+  status: OrderStatus
+  before: DateTime
+  after: DateTime
+}
+
+type Address {
+  street: String!
+  city: String!
+  country: String!
+}
+
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  role: Role!
+  createdAt: DateTime!
+  address: Address
+  metadata: JSON
+}
+
+type Order {
+  id: ID!
+  status: OrderStatus!
+  total: Float!
+  itemCount: Int!
+  placedAt: DateTime!
+  user: User!
+}
+
+type DeleteResult {
+  success: Boolean!
+  message: String
+}
+
+type Query {
+  user(id: ID!): User
+  users: [User!]!
+  order(id: ID!): Order
+  orders(filter: OrderFilterInput): [Order!]!
+  me: User
+}
+
+type Mutation {
+  createUser(input: CreateUserInput!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+  deleteUser(id: ID!): DeleteResult!
+  placeOrder(userId: ID!, itemCount: Int!, total: Float!): Order!
+}

@@ -1,0 +1,10 @@
+{
+  "GetUser": "query GetUser($id: ID!) { user(id: $id) { id name email role createdAt address { street city country } } }",
+  "ListUsers": "query ListUsers { users { id name email role } }",
+  "GetMe": "query GetMe { me { id name email role metadata } }",
+  "GetOrders": "query GetOrders($filter: OrderFilterInput) { orders(filter: $filter) { id status total itemCount placedAt } }",
+  "CreateUser": "mutation CreateUser($input: CreateUserInput!) { createUser(input: $input) { id name email role } }",
+  "UpdateUser": "mutation UpdateUser($id: ID!, $input: UpdateUserInput!) { updateUser(id: $id, input: $input) { id name email role } }",
+  "DeleteUser": "mutation DeleteUser($id: ID!) { deleteUser(id: $id) { success message } }",
+  "PlaceOrder": "mutation PlaceOrder($userId: ID!, $itemCount: Int!, $total: Float!) { placeOrder(userId: $userId, itemCount: $itemCount, total: $total) { id status total itemCount placedAt } }"
+}

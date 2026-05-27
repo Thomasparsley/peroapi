@@ -1,0 +1,545 @@
+openapi: 3.0.3
+info:
+    title: Test API
+    version: 1.0.0
+paths:
+    /api/graphql/CreateUser:
+        get:
+            operationId: CreateUser
+            parameters:
+                - name: input
+                  in: query
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/CreateUserInput'
+            responses:
+                "200":
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    data:
+                                        type: object
+                                        properties:
+                                            createUser:
+                                                $ref: '#/components/schemas/CreateUserUser'
+                                        required:
+                                            - createUser
+                                    errors:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                locations:
+                                                    type: array
+                                                    items:
+                                                        type: object
+                                                message:
+                                                    type: string
+                                                path:
+                                                    type: array
+                                                    items:
+                                                        type: string
+    /api/graphql/DeleteUser:
+        get:
+            operationId: DeleteUser
+            parameters:
+                - name: id
+                  in: query
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    data:
+                                        type: object
+                                        properties:
+                                            deleteUser:
+                                                $ref: '#/components/schemas/DeleteUserDeleteResult'
+                                        required:
+                                            - deleteUser
+                                    errors:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                locations:
+                                                    type: array
+                                                    items:
+                                                        type: object
+                                                message:
+                                                    type: string
+                                                path:
+                                                    type: array
+                                                    items:
+                                                        type: string
+    /api/graphql/GetMe:
+        get:
+            operationId: GetMe
+            responses:
+                "200":
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    data:
+                                        type: object
+                                        properties:
+                                            me:
+                                                nullable: true
+                                                allOf:
+                                                    - $ref: '#/components/schemas/GetMeUser'
+                                    errors:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                locations:
+                                                    type: array
+                                                    items:
+                                                        type: object
+                                                message:
+                                                    type: string
+                                                path:
+                                                    type: array
+                                                    items:
+                                                        type: string
+    /api/graphql/GetOrders:
+        get:
+            operationId: GetOrders
+            parameters:
+                - name: filter
+                  in: query
+                  required: false
+                  schema:
+                    nullable: true
+                    allOf:
+                        - $ref: '#/components/schemas/OrderFilterInput'
+            responses:
+                "200":
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    data:
+                                        type: object
+                                        properties:
+                                            orders:
+                                                type: array
+                                                items:
+                                                    $ref: '#/components/schemas/GetOrdersOrder'
+                                        required:
+                                            - orders
+                                    errors:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                locations:
+                                                    type: array
+                                                    items:
+                                                        type: object
+                                                message:
+                                                    type: string
+                                                path:
+                                                    type: array
+                                                    items:
+                                                        type: string
+    /api/graphql/GetUser:
+        get:
+            operationId: GetUser
+            parameters:
+                - name: id
+                  in: query
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    data:
+                                        type: object
+                                        properties:
+                                            user:
+                                                nullable: true
+                                                allOf:
+                                                    - $ref: '#/components/schemas/GetUserUser'
+                                    errors:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                locations:
+                                                    type: array
+                                                    items:
+                                                        type: object
+                                                message:
+                                                    type: string
+                                                path:
+                                                    type: array
+                                                    items:
+                                                        type: string
+    /api/graphql/ListUsers:
+        get:
+            operationId: ListUsers
+            responses:
+                "200":
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    data:
+                                        type: object
+                                        properties:
+                                            users:
+                                                type: array
+                                                items:
+                                                    $ref: '#/components/schemas/ListUsersUser'
+                                        required:
+                                            - users
+                                    errors:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                locations:
+                                                    type: array
+                                                    items:
+                                                        type: object
+                                                message:
+                                                    type: string
+                                                path:
+                                                    type: array
+                                                    items:
+                                                        type: string
+    /api/graphql/PlaceOrder:
+        get:
+            operationId: PlaceOrder
+            parameters:
+                - name: userId
+                  in: query
+                  required: true
+                  schema:
+                    type: string
+                - name: itemCount
+                  in: query
+                  required: true
+                  schema:
+                    type: integer
+                    format: int32
+                - name: total
+                  in: query
+                  required: true
+                  schema:
+                    type: number
+                    format: float
+            responses:
+                "200":
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    data:
+                                        type: object
+                                        properties:
+                                            placeOrder:
+                                                $ref: '#/components/schemas/PlaceOrderOrder'
+                                        required:
+                                            - placeOrder
+                                    errors:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                locations:
+                                                    type: array
+                                                    items:
+                                                        type: object
+                                                message:
+                                                    type: string
+                                                path:
+                                                    type: array
+                                                    items:
+                                                        type: string
+    /api/graphql/UpdateUser:
+        get:
+            operationId: UpdateUser
+            parameters:
+                - name: id
+                  in: query
+                  required: true
+                  schema:
+                    type: string
+                - name: input
+                  in: query
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/UpdateUserInput'
+            responses:
+                "200":
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    data:
+                                        type: object
+                                        properties:
+                                            updateUser:
+                                                $ref: '#/components/schemas/UpdateUserUser'
+                                        required:
+                                            - updateUser
+                                    errors:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                locations:
+                                                    type: array
+                                                    items:
+                                                        type: object
+                                                message:
+                                                    type: string
+                                                path:
+                                                    type: array
+                                                    items:
+                                                        type: string
+components:
+    schemas:
+        CreateUserInput:
+            type: object
+            properties:
+                email:
+                    type: string
+                name:
+                    type: string
+                role:
+                    nullable: true
+                    allOf:
+                        - $ref: '#/components/schemas/Role'
+            required:
+                - name
+                - email
+        CreateUserUser:
+            type: object
+            properties:
+                email:
+                    type: string
+                id:
+                    type: string
+                name:
+                    type: string
+                role:
+                    $ref: '#/components/schemas/Role'
+            required:
+                - id
+                - name
+                - email
+                - role
+        DeleteUserDeleteResult:
+            type: object
+            properties:
+                message:
+                    type: string
+                    nullable: true
+                success:
+                    type: boolean
+            required:
+                - success
+        GetMeUser:
+            type: object
+            properties:
+                email:
+                    type: string
+                id:
+                    type: string
+                metadata:
+                    type: string
+                    nullable: true
+                    x-graphql-scalar: JSON
+                name:
+                    type: string
+                role:
+                    $ref: '#/components/schemas/Role'
+            required:
+                - id
+                - name
+                - email
+                - role
+        GetOrdersOrder:
+            type: object
+            properties:
+                id:
+                    type: string
+                itemCount:
+                    type: integer
+                    format: int32
+                placedAt:
+                    type: string
+                    x-graphql-scalar: DateTime
+                status:
+                    $ref: '#/components/schemas/OrderStatus'
+                total:
+                    type: number
+                    format: float
+            required:
+                - id
+                - status
+                - total
+                - itemCount
+                - placedAt
+        GetUserAddress:
+            type: object
+            properties:
+                city:
+                    type: string
+                country:
+                    type: string
+                street:
+                    type: string
+            required:
+                - street
+                - city
+                - country
+        GetUserUser:
+            type: object
+            properties:
+                address:
+                    nullable: true
+                    allOf:
+                        - $ref: '#/components/schemas/GetUserAddress'
+                createdAt:
+                    type: string
+                    x-graphql-scalar: DateTime
+                email:
+                    type: string
+                id:
+                    type: string
+                name:
+                    type: string
+                role:
+                    $ref: '#/components/schemas/Role'
+            required:
+                - id
+                - name
+                - email
+                - role
+                - createdAt
+        ListUsersUser:
+            type: object
+            properties:
+                email:
+                    type: string
+                id:
+                    type: string
+                name:
+                    type: string
+                role:
+                    $ref: '#/components/schemas/Role'
+            required:
+                - id
+                - name
+                - email
+                - role
+        OrderFilterInput:
+            type: object
+            properties:
+                after:
+                    type: string
+                    nullable: true
+                    x-graphql-scalar: DateTime
+                before:
+                    type: string
+                    nullable: true
+                    x-graphql-scalar: DateTime
+                status:
+                    nullable: true
+                    allOf:
+                        - $ref: '#/components/schemas/OrderStatus'
+        OrderStatus:
+            type: string
+            enum:
+                - PENDING
+                - CONFIRMED
+                - SHIPPED
+                - DELIVERED
+                - CANCELLED
+        PlaceOrderOrder:
+            type: object
+            properties:
+                id:
+                    type: string
+                itemCount:
+                    type: integer
+                    format: int32
+                placedAt:
+                    type: string
+                    x-graphql-scalar: DateTime
+                status:
+                    $ref: '#/components/schemas/OrderStatus'
+                total:
+                    type: number
+                    format: float
+            required:
+                - id
+                - status
+                - total
+                - itemCount
+                - placedAt
+        Role:
+            type: string
+            enum:
+                - ADMIN
+                - USER
+                - GUEST
+        UpdateUserInput:
+            type: object
+            properties:
+                email:
+                    type: string
+                    nullable: true
+                name:
+                    type: string
+                    nullable: true
+                role:
+                    nullable: true
+                    allOf:
+                        - $ref: '#/components/schemas/Role'
+        UpdateUserUser:
+            type: object
+            properties:
+                email:
+                    type: string
+                id:
+                    type: string
+                name:
+                    type: string
+                role:
+                    $ref: '#/components/schemas/Role'
+            required:
+                - id
+                - name
+                - email
+                - role
