@@ -3,6 +3,7 @@ package converter
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -125,7 +126,7 @@ func New(schema *ast.Schema) *Converter {
 	return &Converter{schema: schema}
 }
 
-// Components returns the enum schemas collected during Convert, keyed by GraphQL enum name.
+// Components returns the schemas collected during Convert, keyed by component name.
 // Call this after Convert to obtain schemas for the OpenAPI components/schemas section.
 func (c *Converter) Components() SchemaMap {
 	return c.components
@@ -139,41 +140,49 @@ func (c *Converter) Convert(ops []*parser.Operation, methodConvention, basePath 
 		if len(op.Doc.Operations) == 0 {
 			continue
 		}
-		gqlOp := op.Doc.Operations[0]
-		method := resolveMethod(gqlOp.Operation, methodConvention)
-		path := strings.TrimRight(basePath, "/") + "/" + op.Name
-
-		c.currentOp = op.Name
-
-		item := &PathItem{
-			OperationName: op.Name,
-			Path:          path,
-			Method:        method,
-		}
-
-		if method == httpMethodGET {
-			params, err := c.variablesToParams(gqlOp.VariableDefinitions)
-			if err != nil {
-				return nil, fmt.Errorf("operation %q params: %w", op.Name, err)
-			}
-			item.Parameters = params
-		} else {
-			body, err := c.variablesToBody(gqlOp.VariableDefinitions)
-			if err != nil {
-				return nil, fmt.Errorf("operation %q body: %w", op.Name, err)
-			}
-			item.RequestBody = body
-		}
-
-		resp, err := c.selectionSetToResponse(gqlOp.SelectionSet, gqlOp.Operation)
+		item, err := c.convertOperation(op, methodConvention, basePath)
 		if err != nil {
-			return nil, fmt.Errorf("operation %q response: %w", op.Name, err)
+			return nil, err
 		}
-		item.Response = resp
-
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+// convertOperation converts a single parsed operation into a PathItem.
+// GET operations carry their variables as query parameters; everything else
+// packs them into a JSON request body.
+func (c *Converter) convertOperation(op *parser.Operation, methodConvention, basePath string) (*PathItem, error) {
+	gqlOp := op.Doc.Operations[0]
+	c.currentOp = op.Name
+
+	item := &PathItem{
+		OperationName: op.Name,
+		Path:          strings.TrimRight(basePath, "/") + "/" + op.Name,
+		Method:        resolveMethod(gqlOp.Operation, methodConvention),
+	}
+
+	if item.Method == httpMethodGET {
+		params, err := c.variablesToParams(gqlOp.VariableDefinitions)
+		if err != nil {
+			return nil, fmt.Errorf("operation %q params: %w", op.Name, err)
+		}
+		item.Parameters = params
+	} else {
+		body, err := c.variablesToBody(gqlOp.VariableDefinitions)
+		if err != nil {
+			return nil, fmt.Errorf("operation %q body: %w", op.Name, err)
+		}
+		item.RequestBody = body
+	}
+
+	resp, err := c.selectionSetToResponse(gqlOp.SelectionSet, gqlOp.Operation)
+	if err != nil {
+		return nil, fmt.Errorf("operation %q response: %w", op.Name, err)
+	}
+	item.Response = resp
+
+	return item, nil
 }
 
 // resolveMethod maps a method convention string and GraphQL operation type to an HTTP method.
@@ -191,6 +200,15 @@ func resolveMethod(opType ast.Operation, convention string) string {
 		}
 		return httpMethodGET
 	}
+}
+
+// objectSchema builds an object schema, omitting the required list when empty.
+func objectSchema(props SchemaMap, required []string) *Schema {
+	obj := &Schema{Type: schemaTypeObject, Properties: props}
+	if len(required) > 0 {
+		obj.Required = required
+	}
+	return obj
 }
 
 // variablesToParams converts GraphQL variable definitions to OpenAPI query parameters.
@@ -221,7 +239,6 @@ func (c *Converter) variablesToBody(vars ast.VariableDefinitionList) (*RequestBo
 
 	props := make(SchemaMap)
 	var required []string
-
 	for _, v := range vars {
 		s, err := c.typeRefToSchema(v.Type)
 		if err != nil {
@@ -233,27 +250,10 @@ func (c *Converter) variablesToBody(vars ast.VariableDefinitionList) (*RequestBo
 		}
 	}
 
-	variablesObj := &Schema{
-		Type:       schemaTypeObject,
-		Properties: props,
-	}
-	if len(required) > 0 {
-		variablesObj.Required = required
-	}
-
-	obj := &Schema{
-		Type: schemaTypeObject,
-		Properties: SchemaMap{
-			variablesKey: variablesObj,
-		},
-		Required: []string{variablesKey},
-	}
-
+	body := objectSchema(SchemaMap{variablesKey: objectSchema(props, required)}, []string{variablesKey})
 	return &RequestBody{
 		Required: true,
-		Content: ContentMap{
-			mediaTypeJSON: {Schema: obj},
-		},
+		Content:  ContentMap{mediaTypeJSON: {Schema: body}},
 	}, nil
 }
 
@@ -289,67 +289,87 @@ func (c *Converter) typeRefToSchema(t *ast.Type) (*Schema, error) {
 	return schema, nil
 }
 
+// refToComponent registers the schema produced by build under name (once) and
+// returns a $ref schema pointing at it. A nil sentinel is stored before build
+// runs so cyclic types terminate instead of recursing forever.
+func (c *Converter) refToComponent(name string, build func() (*Schema, error)) (*Schema, error) {
+	if _, exists := c.components[name]; !exists {
+		c.components[name] = nil // sentinel: prevents infinite recursion on cyclic types
+		s, err := build()
+		if err != nil {
+			return nil, err
+		}
+		c.components[name] = s
+	}
+	return &Schema{Ref: componentsSchemaPrefix + name}, nil
+}
+
+// boundedIntSchema returns an int32 schema constrained to [min, max].
+func boundedIntSchema(min, max int64) *Schema {
+	return &Schema{Type: schemaTypeInteger, Format: schemaFormatInt32, Minimum: &min, Maximum: &max}
+}
+
+// builtinScalarSchema maps GraphQL built-in and well-known scalars to OpenAPI schemas.
+// The second return value reports whether name was recognized.
+func builtinScalarSchema(name string) (*Schema, bool) {
+	switch name {
+	case "String", "ID":
+		return &Schema{Type: schemaTypeString}, true
+	case "Int":
+		return &Schema{Type: schemaTypeInteger, Format: schemaFormatInt32}, true
+	case "Float":
+		return &Schema{Type: schemaTypeNumber, Format: schemaFormatFloat}, true
+	case "Boolean":
+		return &Schema{Type: schemaTypeBoolean}, true
+	case "UnsignedShort":
+		return boundedIntSchema(0, 65535), true
+	case "Byte":
+		return boundedIntSchema(0, 255), true
+	case "LocalDate":
+		return &Schema{Type: schemaTypeString, Format: schemaFormatDate}, true
+	default:
+		return nil, false
+	}
+}
+
 // namedTypeToSchema maps a named GraphQL type to its OpenAPI schema equivalent.
 // Built-in scalars are converted directly; enums and input objects are registered in
 // c.components and returned as $ref pointers so each type is only defined once.
 // Unknown scalars fall back to a plain string schema with an x-graphql-scalar extension.
 func (c *Converter) namedTypeToSchema(name string) (*Schema, error) {
-	switch name {
-	case "String":
-		return &Schema{Type: schemaTypeString}, nil
-	case "Int":
-		return &Schema{Type: schemaTypeInteger, Format: schemaFormatInt32}, nil
-	case "Float":
-		return &Schema{Type: schemaTypeNumber, Format: schemaFormatFloat}, nil
-	case "Boolean":
-		return &Schema{Type: schemaTypeBoolean}, nil
-	case "ID":
-		return &Schema{Type: schemaTypeString}, nil
-	case "UnsignedShort":
-		max := int64(65535)
-		return &Schema{Type: schemaTypeInteger, Format: schemaFormatInt32, Minimum: new(int64), Maximum: &max}, nil
-	case "Byte":
-		max := int64(255)
-		return &Schema{Type: schemaTypeInteger, Format: schemaFormatInt32, Minimum: new(int64), Maximum: &max}, nil
-	case "LocalDate":
-		return &Schema{Type: schemaTypeString, Format: schemaFormatDate}, nil
+	if s, ok := builtinScalarSchema(name); ok {
+		return s, nil
 	}
 
 	typeDef, ok := c.schema.Types[name]
 	if !ok {
-		// Unknown — treat as string with extension
-		fmt.Printf("warning: unknown scalar %q, treating as string\n", name)
+		fmt.Fprintf(os.Stderr, "warning: unknown scalar %q, treating as string\n", name)
 		return &Schema{Type: schemaTypeString, XGraphQLScalar: name}, nil
 	}
 
 	switch typeDef.Kind {
 	case ast.Scalar:
 		return &Schema{Type: schemaTypeString, XGraphQLScalar: name}, nil
-
 	case ast.Enum:
-		if _, registered := c.components[name]; !registered {
-			var values []string
-			for _, v := range typeDef.EnumValues {
-				values = append(values, v.Name)
-			}
-			c.components[name] = &Schema{Type: schemaTypeString, Enum: values}
-		}
-		return &Schema{Ref: componentsSchemaPrefix + name}, nil
-
+		return c.refToComponent(name, func() (*Schema, error) {
+			return enumSchema(typeDef), nil
+		})
 	case ast.InputObject:
-		if _, registered := c.components[name]; !registered {
-			c.components[name] = nil // sentinel: prevents infinite recursion on cyclic input types
-			schema, err := c.inputObjectToSchema(typeDef)
-			if err != nil {
-				return nil, err
-			}
-			c.components[name] = schema
-		}
-		return &Schema{Ref: componentsSchemaPrefix + name}, nil
-
+		return c.refToComponent(name, func() (*Schema, error) {
+			return c.inputObjectToSchema(typeDef)
+		})
 	default:
 		return &Schema{Type: schemaTypeString}, nil
 	}
+}
+
+// enumSchema converts a GraphQL enum definition to a string schema with an enum list.
+func enumSchema(def *ast.Definition) *Schema {
+	values := make([]string, 0, len(def.EnumValues))
+	for _, v := range def.EnumValues {
+		values = append(values, v.Name)
+	}
+	return &Schema{Type: schemaTypeString, Enum: values}
 }
 
 // inputObjectToSchema converts a GraphQL input object type to an OpenAPI object schema.
@@ -368,15 +388,7 @@ func (c *Converter) inputObjectToSchema(def *ast.Definition) (*Schema, error) {
 			required = append(required, field.Name)
 		}
 	}
-
-	obj := &Schema{
-		Type:       schemaTypeObject,
-		Properties: props,
-	}
-	if len(required) > 0 {
-		obj.Required = required
-	}
-	return obj, nil
+	return objectSchema(props, required), nil
 }
 
 // selectionSetToResponse wraps the selection set schema in the standard GraphQL response envelope:
@@ -390,27 +402,30 @@ func (c *Converter) selectionSetToResponse(sel ast.SelectionSet, opType ast.Oper
 	envelope := &Schema{
 		Type: schemaTypeObject,
 		Properties: SchemaMap{
-			"data": dataSchema,
-			"errors": {
-				Type: schemaTypeArray,
-				Items: &Schema{
-					Type: schemaTypeObject,
-					Properties: SchemaMap{
-						"message":   {Type: schemaTypeString},
-						"locations": {Type: schemaTypeArray, Items: &Schema{Type: schemaTypeObject}},
-						"path":      {Type: schemaTypeArray, Items: &Schema{Type: schemaTypeString}},
-					},
-				},
-			},
+			"data":   dataSchema,
+			"errors": graphQLErrorsSchema(),
 		},
 	}
 
 	return &Response{
 		Description: successfulResponse,
-		Content: map[string]*MediaTypeObject{
-			mediaTypeJSON: {Schema: envelope},
-		},
+		Content:     ContentMap{mediaTypeJSON: {Schema: envelope}},
 	}, nil
+}
+
+// graphQLErrorsSchema describes the standard GraphQL errors array.
+func graphQLErrorsSchema() *Schema {
+	return &Schema{
+		Type: schemaTypeArray,
+		Items: &Schema{
+			Type: schemaTypeObject,
+			Properties: SchemaMap{
+				"message":   {Type: schemaTypeString},
+				"locations": {Type: schemaTypeArray, Items: &Schema{Type: schemaTypeObject}},
+				"path":      {Type: schemaTypeArray, Items: &Schema{Type: schemaTypeString}},
+			},
+		},
+	}
 }
 
 // rootTypeName returns the schema's root type name for the given operation kind.
@@ -456,23 +471,24 @@ func collectTypedFields(sel ast.SelectionSet, parentTypeName string, optional bo
 			result = append(result, typedField{n, parentTypeName, optional})
 		case *ast.FragmentSpread:
 			if n.Definition != nil {
-				typeName := n.Definition.TypeCondition
-				if typeName == "" {
-					typeName = parentTypeName
-				}
-				isNarrowing := typeName != parentTypeName
-				result = append(result, collectTypedFields(n.Definition.SelectionSet, typeName, optional || isNarrowing)...)
+				result = append(result, collectFragmentFields(n.Definition.SelectionSet, n.Definition.TypeCondition, parentTypeName, optional)...)
 			}
 		case *ast.InlineFragment:
-			typeName := n.TypeCondition
-			if typeName == "" {
-				typeName = parentTypeName
-			}
-			isNarrowing := typeName != parentTypeName
-			result = append(result, collectTypedFields(n.SelectionSet, typeName, optional || isNarrowing)...)
+			result = append(result, collectFragmentFields(n.SelectionSet, n.TypeCondition, parentTypeName, optional)...)
 		}
 	}
 	return result
+}
+
+// collectFragmentFields collects fields from a fragment's selection set, resolving
+// them against the fragment's type condition (or the parent type when absent).
+func collectFragmentFields(sel ast.SelectionSet, typeCondition, parentTypeName string, optional bool) []typedField {
+	typeName := typeCondition
+	if typeName == "" {
+		typeName = parentTypeName
+	}
+	isNarrowing := typeName != parentTypeName
+	return collectTypedFields(sel, typeName, optional || isNarrowing)
 }
 
 // collectConcreteTypes returns the distinct concrete (Object) type names that appear
@@ -508,14 +524,39 @@ func (c *Converter) typeImplements(typeName, interfaceName string) bool {
 	return false
 }
 
+// fieldDefFor looks up the definition of fieldName on type typeName.
+// Returns nil when the type or field is unknown.
+func (c *Converter) fieldDefFor(typeName, fieldName string) *ast.FieldDefinition {
+	typeDef, ok := c.schema.Types[typeName]
+	if !ok {
+		return nil
+	}
+	return typeDef.Fields.ForName(fieldName)
+}
+
+// concreteTypeIncludes reports whether a field resolved in the context of
+// fieldTypeName belongs in the schema for concreteTypeName.
+func (c *Converter) concreteTypeIncludes(concreteTypeName, fieldTypeName, parentTypeName string, concreteTypeSet map[string]bool) bool {
+	switch {
+	case fieldTypeName == parentTypeName:
+		return true // base field — always included
+	case fieldTypeName == concreteTypeName:
+		return true // this concrete type's own fragment field
+	case concreteTypeSet[fieldTypeName]:
+		return false // a different concrete type's fragment
+	default:
+		// Interface fragment — include only if this concrete type implements it.
+		return c.typeImplements(concreteTypeName, fieldTypeName)
+	}
+}
+
 // buildConcreteTypeSchema builds a flat merged schema for a specific concrete type
 // from a selection set that targets an abstract parent type. Fields from other concrete
 // types' inline fragments are excluded; fields from interface fragments are included
 // only if the concrete type implements that interface.
 func (c *Converter) buildConcreteTypeSchema(sel ast.SelectionSet, parentTypeName, concreteTypeName string) (*Schema, error) {
-	concreteTypes := c.collectConcreteTypes(sel, parentTypeName)
-	concreteTypeSet := make(map[string]bool, len(concreteTypes))
-	for _, ct := range concreteTypes {
+	concreteTypeSet := make(map[string]bool)
+	for _, ct := range c.collectConcreteTypes(sel, parentTypeName) {
 		concreteTypeSet[ct] = true
 	}
 
@@ -536,28 +577,12 @@ func (c *Converter) buildConcreteTypeSchema(sel ast.SelectionSet, parentTypeName
 			continue
 		}
 
-		switch {
-		case tf.typeName == parentTypeName:
-			// Base field — always included.
-		case tf.typeName == concreteTypeName:
-			// This concrete type's own fragment field — included.
-		case concreteTypeSet[tf.typeName]:
-			// A different concrete type's fragment — excluded.
+		if !c.concreteTypeIncludes(concreteTypeName, tf.typeName, parentTypeName, concreteTypeSet) {
 			continue
-		default:
-			// Interface fragment — include only if this concrete type implements it.
-			if !c.typeImplements(concreteTypeName, tf.typeName) {
-				continue
-			}
 		}
-
 		seen[alias] = true
 
-		typeDef, ok := c.schema.Types[tf.typeName]
-		if !ok {
-			continue
-		}
-		fieldDef := typeDef.Fields.ForName(tf.field.Name)
+		fieldDef := c.fieldDefFor(tf.typeName, tf.field.Name)
 		if fieldDef == nil {
 			continue
 		}
@@ -571,12 +596,7 @@ func (c *Converter) buildConcreteTypeSchema(sel ast.SelectionSet, parentTypeName
 			required = append(required, alias)
 		}
 	}
-
-	obj := &Schema{Type: schemaTypeObject, Properties: props}
-	if len(required) > 0 {
-		obj.Required = required
-	}
-	return obj, nil
+	return objectSchema(props, required), nil
 }
 
 // selectionSetToSchema converts a GraphQL selection set to an OpenAPI schema.
@@ -587,43 +607,45 @@ func (c *Converter) selectionSetToSchema(sel ast.SelectionSet, parentTypeName st
 	if len(sel) == 0 {
 		return &Schema{Type: schemaTypeObject}, nil
 	}
-
 	if _, ok := c.schema.Types[parentTypeName]; !ok {
 		return &Schema{Type: schemaTypeObject}, nil
 	}
-
-	// When concrete type inline fragments are present, emit a oneOf discriminated union —
-	// one variant per concrete type — instead of a flat merged schema.
 	if concreteTypes := c.collectConcreteTypes(sel, parentTypeName); len(concreteTypes) > 0 {
-		oneOf := make([]*Schema, 0, len(concreteTypes))
-		for _, ct := range concreteTypes {
-			compName := c.currentOp + ct
-			if _, exists := c.components[compName]; !exists {
-				c.components[compName] = nil // sentinel: prevents cycles
-				s, err := c.buildConcreteTypeSchema(sel, parentTypeName, ct)
-				if err != nil {
-					return nil, err
-				}
-				c.components[compName] = s
-			}
-			oneOf = append(oneOf, &Schema{Ref: componentsSchemaPrefix + compName})
+		return c.oneOfSchema(sel, parentTypeName, concreteTypes)
+	}
+	return c.mergedObjectSchema(sel, parentTypeName)
+}
+
+// oneOfSchema produces a discriminated union with one $ref variant per concrete
+// type appearing in the selection set's type-narrowing fragments.
+func (c *Converter) oneOfSchema(sel ast.SelectionSet, parentTypeName string, concreteTypes []string) (*Schema, error) {
+	oneOf := make([]*Schema, 0, len(concreteTypes))
+	for _, ct := range concreteTypes {
+		ref, err := c.refToComponent(c.currentOp+ct, func() (*Schema, error) {
+			return c.buildConcreteTypeSchema(sel, parentTypeName, ct)
+		})
+		if err != nil {
+			return nil, err
 		}
-
-		result := &Schema{OneOf: oneOf}
-
-		// If __typename (or an alias of it) is selected, add an OAS discriminator so
-		// that tooling can map each variant to its concrete type by name.
-		for _, tf := range collectTypedFields(sel, parentTypeName, false) {
-			if tf.field.Name == graphQLTypeName {
-				result.Discriminator = &Discriminator{PropertyName: tf.field.Alias}
-				break
-			}
-		}
-
-		return result, nil
+		oneOf = append(oneOf, ref)
 	}
 
-	// No concrete type discrimination — flat merged schema.
+	result := &Schema{OneOf: oneOf}
+
+	// If __typename (or an alias of it) is selected, add an OAS discriminator so
+	// that tooling can map each variant to its concrete type by name.
+	for _, tf := range collectTypedFields(sel, parentTypeName, false) {
+		if tf.field.Name == graphQLTypeName {
+			result.Discriminator = &Discriminator{PropertyName: tf.field.Alias}
+			break
+		}
+	}
+	return result, nil
+}
+
+// mergedObjectSchema flattens a selection set (including all fragments) into a
+// single object schema. Fields from narrowing fragments stay optional.
+func (c *Converter) mergedObjectSchema(sel ast.SelectionSet, parentTypeName string) (*Schema, error) {
 	props := make(SchemaMap)
 	var required []string
 	seen := make(map[string]bool)
@@ -640,11 +662,7 @@ func (c *Converter) selectionSetToSchema(sel ast.SelectionSet, parentTypeName st
 			continue
 		}
 
-		typeDef, ok := c.schema.Types[tf.typeName]
-		if !ok {
-			continue
-		}
-		fieldDef := typeDef.Fields.ForName(tf.field.Name)
+		fieldDef := c.fieldDefFor(tf.typeName, tf.field.Name)
 		if fieldDef == nil {
 			continue
 		}
@@ -658,44 +676,36 @@ func (c *Converter) selectionSetToSchema(sel ast.SelectionSet, parentTypeName st
 			required = append(required, alias)
 		}
 	}
-
-	obj := &Schema{Type: schemaTypeObject, Properties: props}
-	if len(required) > 0 {
-		obj.Required = required
-	}
-	return obj, nil
+	return objectSchema(props, required), nil
 }
 
 // fieldToSchema converts a GraphQL field return type (with optional sub-selection) to an OpenAPI schema.
 // Object sub-selections are extracted to named components to avoid deep inline nesting and enable $ref reuse.
 func (c *Converter) fieldToSchema(t *ast.Type, sel ast.SelectionSet) (*Schema, error) {
-	var schema *Schema
-	if t.Elem != nil {
-		items, err := c.fieldToSchema(t.Elem, sel)
-		if err != nil {
-			return nil, err
-		}
-		schema = &Schema{Type: schemaTypeArray, Items: items}
-	} else if len(sel) > 0 {
-		compName := c.currentOp + t.NamedType
-		if _, exists := c.components[compName]; !exists {
-			c.components[compName] = nil // sentinel: prevents cycles
-			s, err := c.selectionSetToSchema(sel, t.NamedType)
-			if err != nil {
-				return nil, err
-			}
-			c.components[compName] = s
-		}
-		schema = &Schema{Ref: componentsSchemaPrefix + compName}
-	} else {
-		var err error
-		schema, err = c.namedTypeToSchema(t.NamedType)
-		if err != nil {
-			return nil, err
-		}
+	schema, err := c.fieldBaseSchema(t, sel)
+	if err != nil {
+		return nil, err
 	}
 	if !t.NonNull {
 		return withNullable(schema), nil
 	}
 	return schema, nil
+}
+
+// fieldBaseSchema resolves a field's type to a schema, ignoring nullability.
+func (c *Converter) fieldBaseSchema(t *ast.Type, sel ast.SelectionSet) (*Schema, error) {
+	switch {
+	case t.Elem != nil:
+		items, err := c.fieldToSchema(t.Elem, sel)
+		if err != nil {
+			return nil, err
+		}
+		return &Schema{Type: schemaTypeArray, Items: items}, nil
+	case len(sel) > 0:
+		return c.refToComponent(c.currentOp+t.NamedType, func() (*Schema, error) {
+			return c.selectionSetToSchema(sel, t.NamedType)
+		})
+	default:
+		return c.namedTypeToSchema(t.NamedType)
+	}
 }

@@ -46,10 +46,10 @@ type PathObject struct {
 
 // OperationObject is an OpenAPI operation.
 type OperationObject struct {
-	OperationID string                        `yaml:"operationId"`
-	Parameters  []*converter.Parameter        `yaml:"parameters,omitempty"`
-	RequestBody *RequestBodyObject            `yaml:"requestBody,omitempty"`
-	Responses   map[string]*ResponseObject    `yaml:"responses"`
+	OperationID string                     `yaml:"operationId"`
+	Parameters  []*converter.Parameter     `yaml:"parameters,omitempty"`
+	RequestBody *RequestBodyObject         `yaml:"requestBody,omitempty"`
+	Responses   map[string]*ResponseObject `yaml:"responses"`
 }
 
 // RequestBodyObject is the OpenAPI request body.
@@ -91,34 +91,7 @@ func Build(items []*converter.PathItem, components converter.SchemaMap, opts Opt
 			doc.Paths[item.Path] = po
 		}
 
-		op := &OperationObject{
-			OperationID: item.OperationName,
-			Parameters:  item.Parameters,
-			Responses:   make(map[string]*ResponseObject),
-		}
-
-		if item.RequestBody != nil {
-			rb := &RequestBodyObject{
-				Required: item.RequestBody.Required,
-				Content:  make(ContentMap),
-			}
-			for mt, mto := range item.RequestBody.Content {
-				rb.Content[mt] = &MediaTypeObject{Schema: mto.Schema}
-			}
-			op.RequestBody = rb
-		}
-
-		if item.Response != nil {
-			ro := &ResponseObject{
-				Description: item.Response.Description,
-				Content:     make(ContentMap),
-			}
-			for mt, mto := range item.Response.Content {
-				ro.Content[mt] = &MediaTypeObject{Schema: mto.Schema}
-			}
-			op.Responses["200"] = ro
-		}
-
+		op := buildOperation(item)
 		switch item.Method {
 		case "POST":
 			po.Post = op
@@ -128,6 +101,40 @@ func Build(items []*converter.PathItem, components converter.SchemaMap, opts Opt
 	}
 
 	return doc
+}
+
+// buildOperation converts a single converted PathItem into an OpenAPI operation object.
+func buildOperation(item *converter.PathItem) *OperationObject {
+	op := &OperationObject{
+		OperationID: item.OperationName,
+		Parameters:  item.Parameters,
+		Responses:   make(map[string]*ResponseObject),
+	}
+
+	if item.RequestBody != nil {
+		op.RequestBody = &RequestBodyObject{
+			Required: item.RequestBody.Required,
+			Content:  toContent(item.RequestBody.Content),
+		}
+	}
+
+	if item.Response != nil {
+		op.Responses["200"] = &ResponseObject{
+			Description: item.Response.Description,
+			Content:     toContent(item.Response.Content),
+		}
+	}
+
+	return op
+}
+
+// toContent copies a converter content map into the emitter's representation.
+func toContent(src converter.ContentMap) ContentMap {
+	dst := make(ContentMap, len(src))
+	for mt, mto := range src {
+		dst[mt] = &MediaTypeObject{Schema: mto.Schema}
+	}
+	return dst
 }
 
 // Write serializes the document to YAML. If path is empty it writes to stdout.

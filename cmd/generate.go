@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -18,13 +19,6 @@ var affirmativeAnswers = map[string]bool{
 	"":    true,
 	"y":   true,
 	"yes": true,
-}
-
-// outputTarget describes where the generated YAML should be written.
-type outputTarget struct {
-	// Path is the file path to write to. Empty when UseStdout is true.
-	Path      string
-	UseStdout bool
 }
 
 var (
@@ -79,49 +73,48 @@ func runGenerate(cmd *cobra.Command, _ []string) error {
 		Version: flagVersion,
 	})
 
-	target := outputTarget{Path: flagOutput}
-	if flagOutput == "" {
-		target, err = resolveOutput(cmd)
+	outputPath := flagOutput
+	if outputPath == "" {
+		outputPath, err = resolveOutputPath(cmd)
 		if err != nil {
 			return err
 		}
 	}
-
-	writePath := ""
-	if !target.UseStdout {
-		writePath = target.Path
-	}
-	return emitter.Write(doc, writePath)
+	return emitter.Write(doc, outputPath)
 }
 
-// resolveOutput prompts the user when --output is not provided.
-func resolveOutput(cmd *cobra.Command) (outputTarget, error) {
+// resolveOutputPath interactively asks for an output destination when --output
+// is not provided. An empty return value means stdout.
+func resolveOutputPath(cmd *cobra.Command) (string, error) {
 	out := cmd.OutOrStdout()
-	if _, err := fmt.Fprint(out, "No output file specified. Print to stdout? [Y/n]: "); err != nil {
-		return outputTarget{}, fmt.Errorf("writing prompt: %w", err)
-	}
-
 	reader := bufio.NewReader(os.Stdin)
-	answer, err := reader.ReadString('\n')
+
+	answer, err := prompt(out, reader, "No output file specified. Print to stdout? [Y/n]: ")
 	if err != nil {
-		return outputTarget{}, fmt.Errorf("reading input: %w", err)
+		return "", err
+	}
+	if affirmativeAnswers[strings.ToLower(answer)] {
+		return "", nil
 	}
 
-	if affirmativeAnswers[strings.TrimSpace(strings.ToLower(answer))] {
-		return outputTarget{UseStdout: true}, nil
-	}
-
-	if _, err := fmt.Fprint(out, "Output filename: "); err != nil {
-		return outputTarget{}, fmt.Errorf("writing prompt: %w", err)
-	}
-
-	filename, err := reader.ReadString('\n')
+	filename, err := prompt(out, reader, "Output filename: ")
 	if err != nil {
-		return outputTarget{}, fmt.Errorf("reading filename: %w", err)
+		return "", err
 	}
-	filename = strings.TrimSpace(filename)
 	if filename == "" {
-		return outputTarget{}, fmt.Errorf("no output filename provided")
+		return "", fmt.Errorf("no output filename provided")
 	}
-	return outputTarget{Path: filename}, nil
+	return filename, nil
+}
+
+// prompt writes msg and reads one line from reader, trimmed of whitespace.
+func prompt(out io.Writer, reader *bufio.Reader, msg string) (string, error) {
+	if _, err := fmt.Fprint(out, msg); err != nil {
+		return "", fmt.Errorf("writing prompt: %w", err)
+	}
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("reading input: %w", err)
+	}
+	return strings.TrimSpace(line), nil
 }
