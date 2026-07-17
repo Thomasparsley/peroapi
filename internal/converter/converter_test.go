@@ -186,15 +186,15 @@ func TestConvert_TypeMappings(t *testing.T) {
 	require.NotNil(t, itemComp)
 	props := itemComp.Properties
 
-	assert.Equal(t, "string", props["id"].Type)     // ID → string
-	assert.Equal(t, "string", props["name"].Type)   // String → string
-	assert.Equal(t, "integer", props["count"].Type) // Int → integer
-	assert.Equal(t, "boolean", props["flag"].Type)  // Boolean → boolean
-	assert.Equal(t, "number", props["score"].Type)  // Float → number
+	assert.Equal(t, "string", props["id"].Type)                         // ID → string
+	assert.Equal(t, "string", props["name"].Type)                       // String → string
+	assert.Equal(t, "integer", props["count"].Type)                     // Int → integer
+	assert.Equal(t, "boolean", props["flag"].Type)                      // Boolean → boolean
+	assert.Equal(t, "number", props["score"].Type)                      // Float → number
 	assert.Equal(t, "#/components/schemas/Status", props["status"].Ref) // Enum → $ref
 	require.Contains(t, conv.Components(), "Status")
 	assert.NotEmpty(t, conv.Components()["Status"].Enum)
-	assert.Equal(t, "string", props["createdAt"].Type)           // Scalar → string
+	assert.Equal(t, "string", props["createdAt"].Type) // Scalar → string
 	assert.Equal(t, "DateTime", props["createdAt"].XGraphQLScalar)
 }
 

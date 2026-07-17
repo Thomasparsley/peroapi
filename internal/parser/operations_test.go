@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/Thomasparsley/peroapi/internal/parser"
 )
@@ -25,7 +26,8 @@ type User {
 }
 `
 
-func loadTestSchema(t *testing.T) interface{ /* *ast.Schema */ } {
+// loadTestSchema writes testSchema to a temp file and loads it, failing the test on error.
+func loadTestSchema(t *testing.T) *ast.Schema {
 	t.Helper()
 	f := writeTempFile(t, "schema.graphql", testSchema)
 	s, err := parser.LoadSchema(f)
@@ -37,9 +39,7 @@ func loadTestSchema(t *testing.T) interface{ /* *ast.Schema */ } {
 // are all parsed, validated against the schema, and returned without error.
 func TestLoadOperations_Valid(t *testing.T) {
 	// Arrange
-	f := writeTempFile(t, "schema.graphql", testSchema)
-	schema, err := parser.LoadSchema(f)
-	require.NoError(t, err)
+	schema := loadTestSchema(t)
 
 	ops := map[string]string{
 		"GetUser":  `query GetUser($id: ID!) { user(id: $id) { id name } }`,
@@ -69,14 +69,11 @@ func TestLoadOperations_Valid(t *testing.T) {
 // produces an error whose message contains "parsing operations JSON".
 func TestLoadOperations_InvalidJSON(t *testing.T) {
 	// Arrange
-	f := writeTempFile(t, "schema.graphql", testSchema)
-	schema, err := parser.LoadSchema(f)
-	require.NoError(t, err)
-
+	schema := loadTestSchema(t)
 	opFile := writeTempFile(t, "ops.json", `not json at all`)
 
 	// Act
-	_, err = parser.LoadOperations(opFile, schema)
+	_, err := parser.LoadOperations(opFile, schema)
 
 	// Assert
 	assert.Error(t, err)
@@ -87,12 +84,10 @@ func TestLoadOperations_InvalidJSON(t *testing.T) {
 // produces an error whose message contains "reading operations file".
 func TestLoadOperations_MissingFile(t *testing.T) {
 	// Arrange
-	f := writeTempFile(t, "schema.graphql", testSchema)
-	schema, err := parser.LoadSchema(f)
-	require.NoError(t, err)
+	schema := loadTestSchema(t)
 
 	// Act
-	_, err = parser.LoadOperations("/no/such/ops.json", schema)
+	_, err := parser.LoadOperations("/no/such/ops.json", schema)
 
 	// Assert
 	assert.Error(t, err)
@@ -104,9 +99,7 @@ func TestLoadOperations_MissingFile(t *testing.T) {
 // Validation errors are accumulated across all operations rather than failing on the first.
 func TestLoadOperations_InvalidOperation(t *testing.T) {
 	// Arrange
-	f := writeTempFile(t, "schema.graphql", testSchema)
-	schema, err := parser.LoadSchema(f)
-	require.NoError(t, err)
+	schema := loadTestSchema(t)
 
 	ops := map[string]string{
 		"Bad": `query Bad { nonExistentField { id } }`,
@@ -115,7 +108,7 @@ func TestLoadOperations_InvalidOperation(t *testing.T) {
 	opFile := writeTempFile(t, "ops.json", string(data))
 
 	// Act
-	_, err = parser.LoadOperations(opFile, schema)
+	_, err := parser.LoadOperations(opFile, schema)
 
 	// Assert
 	assert.Error(t, err)
