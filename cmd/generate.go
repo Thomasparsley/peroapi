@@ -52,6 +52,10 @@ func init() {
 
 // runGenerate orchestrates the full pipeline: parse schema → load operations → convert to PathItems → emit YAML.
 func runGenerate(cmd *cobra.Command, _ []string) error {
+	if err := converter.ValidateConvention(flagMethod); err != nil {
+		return err
+	}
+
 	schema, err := parser.LoadSchema(flagSchema)
 	if err != nil {
 		return fmt.Errorf("loading schema: %w", err)
@@ -66,6 +70,10 @@ func runGenerate(cmd *cobra.Command, _ []string) error {
 	converted, err := conv.Convert(ops, flagMethod, flagBasePath)
 	if err != nil {
 		return fmt.Errorf("converting operations: %w", err)
+	}
+
+	for _, w := range conv.Warnings() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
 	}
 
 	doc := emitter.Build(converted, conv.Components(), emitter.Options{
@@ -84,9 +92,10 @@ func runGenerate(cmd *cobra.Command, _ []string) error {
 }
 
 // resolveOutputPath interactively asks for an output destination when --output
-// is not provided. An empty return value means stdout.
+// is not provided. An empty return value means stdout. Prompts are written to
+// stderr so they never contaminate the YAML document when it is emitted to stdout.
 func resolveOutputPath(cmd *cobra.Command) (string, error) {
-	out := cmd.OutOrStdout()
+	out := cmd.ErrOrStderr()
 	reader := bufio.NewReader(os.Stdin)
 
 	answer, err := prompt(out, reader, "No output file specified. Print to stdout? [Y/n]: ")
@@ -113,7 +122,7 @@ func prompt(out io.Writer, reader *bufio.Reader, msg string) (string, error) {
 		return "", fmt.Errorf("writing prompt: %w", err)
 	}
 	line, err := reader.ReadString('\n')
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return "", fmt.Errorf("reading input: %w", err)
 	}
 	return strings.TrimSpace(line), nil
