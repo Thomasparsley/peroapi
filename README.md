@@ -55,7 +55,7 @@ peroapi generate --schema <schema.graphql> --operations <gql-persisted.json> [fl
 | `--method-convention` | | `rest` | HTTP method strategy: `rest`, `post`, or `get` |
 | `--base-path` | | `/api/graphql` | Path prefix for every generated route |
 | `--title` | | `Generated API` | Value for OpenAPI `info.title` |
-| `--version` | | `1.0.0` | Value for OpenAPI `info.version` |
+| `--version` | | `1.1.0` | Value for OpenAPI `info.version` |
 
 ### Method conventions
 
@@ -137,7 +137,7 @@ With the `rest` convention, a query like `GetUser` becomes a `GET` route (variab
 openapi: 3.0.3
 info:
     title: Generated API
-    version: 1.0.0
+    version: 1.1.0
 paths:
     /api/graphql/GetUser:
         get:
