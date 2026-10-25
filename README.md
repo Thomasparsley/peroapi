@@ -1,8 +1,29 @@
 # peroapi
 
-CLI tool that transforms a GraphQL persisted operations map and schema into a fully typed OpenAPI v3 YAML specification. Designed for teams running persisted-only GraphQL APIs with RPC-style endpoints.
+Generate an OpenAPI v3 spec from a persisted-only GraphQL API, so external systems can use it without a second REST API.
 
-Each persisted operation becomes its own HTTP route (`{base-path}/{OperationName}`), with request variables and response selection sets resolved against the schema and emitted as typed OpenAPI schemas.
+## Why
+
+You already have a GraphQL API locked to persisted operations and used internally. Building and maintaining a separate REST API for external consumers costs time and money. Each persisted operation has a fixed name, variables and response shape, so it maps directly to an HTTP endpoint. peroapi turns your schema and persisted operations into a typed OpenAPI spec that works with codegen, gateways, Postman and docs portals.
+
+peroapi only generates the spec. It runs no server, so an API gateway or thin handler must route requests to your persisted operations.
+
+## Public operations
+
+Never publish internal operations. They change with the UI, and external systems can't follow. Instead:
+
+- **Separate operations:** write dedicated public queries and mutations in their own persisted operations file (e.g. `gql-persisted.public.json`).
+- **Stable contract:** treat a public operation like a REST endpoint. Only make additive changes (new optional variables, new response fields). For breaking changes, add a new operation (e.g. `GetUserV2`) and deprecate the old one.
+- **Public set only:** generate the spec from the public file, so internal operations never appear in it.
+
+```sh
+peroapi generate \
+  --schema schema.graphql \
+  --operations gql-persisted.public.json \
+  --output openapi.public.yaml
+```
+
+Each operation becomes a route (`{base-path}/{OperationName}`), with variables and response selection sets resolved against the schema into typed OpenAPI schemas.
 
 ## Installation
 
