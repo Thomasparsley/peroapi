@@ -161,7 +161,7 @@ func TestConvert_SchemaTypeNotOverriddenByCustomScalarName(t *testing.T) {
 	_, err := conv.Convert(ops, "post", "/api")
 	require.NoError(t, err)
 
-	local := conv.Components()["LocalDate"]
+	local := conv.Components()[converter.ScalarLocalDate]
 	require.NotNil(t, local, "schema-defined enum LocalDate must be registered as a component")
 	assert.ElementsMatch(t, []string{"TODAY", "TOMORROW"}, local.Enum)
 }

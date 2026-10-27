@@ -281,14 +281,14 @@ func TestConvert_PathGeneration(t *testing.T) {
 }
 
 const scalarsSchema = `
-scalar UnsignedShort
-scalar Byte
-scalar LocalDate
+scalar ` + converter.ScalarUnsignedShort + `
+scalar ` + converter.ScalarByte + `
+scalar ` + converter.ScalarLocalDate + `
 
 type Item {
-  port: UnsignedShort!
-  flags: Byte!
-  birthday: LocalDate!
+  port: ` + converter.ScalarUnsignedShort + `!
+  flags: ` + converter.ScalarByte + `!
+  birthday: ` + converter.ScalarLocalDate + `!
 }
 
 type Query {
@@ -349,13 +349,13 @@ func TestConvert_IntegerScalarRanges(t *testing.T) {
 		scalar, format string
 		min, max       *int64
 	}{
-		{"Byte", "int32", i64(math.MinInt8), i64(math.MaxInt8)},
-		{"UnsignedByte", "int32", i64(0), i64(math.MaxUint8)},
-		{"Short", "int32", i64(math.MinInt16), i64(math.MaxInt16)},
-		{"UnsignedShort", "int32", i64(0), i64(math.MaxUint16)},
-		{"UnsignedInt", "int64", i64(0), i64(math.MaxUint32)},
-		{"Long", "int64", nil, nil},
-		{"UnsignedLong", "", i64(0), nil},
+		{converter.ScalarByte, "int32", i64(math.MinInt8), i64(math.MaxInt8)},
+		{converter.ScalarUnsignedByte, "int32", i64(0), i64(math.MaxUint8)},
+		{converter.ScalarShort, "int32", i64(math.MinInt16), i64(math.MaxInt16)},
+		{converter.ScalarUnsignedShort, "int32", i64(0), i64(math.MaxUint16)},
+		{converter.ScalarUnsignedInt, "int64", i64(0), i64(math.MaxUint32)},
+		{converter.ScalarLong, "int64", nil, nil},
+		{converter.ScalarUnsignedLong, "", i64(0), nil},
 	}
 
 	for _, tc := range cases {

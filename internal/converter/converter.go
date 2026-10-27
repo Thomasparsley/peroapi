@@ -120,6 +120,26 @@ const (
 	successfulResponse = "Successful response"
 )
 
+// GraphQL scalar names the converter recognizes, exported so tests and callers share them. The
+// built-ins come from the GraphQL spec; the rest are well-known custom scalars that the schema
+// may declare (Hot Chocolate naming).
+const (
+	ScalarString  = "String"
+	ScalarID      = "ID"
+	ScalarInt     = "Int"
+	ScalarFloat   = "Float"
+	ScalarBoolean = "Boolean"
+
+	ScalarByte          = "Byte"
+	ScalarUnsignedByte  = "UnsignedByte"
+	ScalarShort         = "Short"
+	ScalarUnsignedShort = "UnsignedShort"
+	ScalarUnsignedInt   = "UnsignedInt"
+	ScalarLong          = "Long"
+	ScalarUnsignedLong  = "UnsignedLong"
+	ScalarLocalDate     = "LocalDate"
+)
+
 // Converter walks GraphQL operations and produces PathItems.
 type Converter struct {
 	schema     *ast.Schema
@@ -317,13 +337,13 @@ func bound(v int64) *int64 { return &v }
 // that use other semantics for the same name need a different mapping.
 // UnsignedLong's upper bound (2^64-1) does not fit int64, so only its lower bound is declared.
 var integerScalars = map[string]integerScalar{
-	"Byte":          {schemaFormatInt32, bound(math.MinInt8), bound(math.MaxInt8)},
-	"UnsignedByte":  {schemaFormatInt32, bound(0), bound(math.MaxUint8)},
-	"Short":         {schemaFormatInt32, bound(math.MinInt16), bound(math.MaxInt16)},
-	"UnsignedShort": {schemaFormatInt32, bound(0), bound(math.MaxUint16)},
-	"UnsignedInt":   {schemaFormatInt64, bound(0), bound(math.MaxUint32)},
-	"Long":          {schemaFormatInt64, nil, nil},
-	"UnsignedLong":  {"", bound(0), nil},
+	ScalarByte:          {schemaFormatInt32, bound(math.MinInt8), bound(math.MaxInt8)},
+	ScalarUnsignedByte:  {schemaFormatInt32, bound(0), bound(math.MaxUint8)},
+	ScalarShort:         {schemaFormatInt32, bound(math.MinInt16), bound(math.MaxInt16)},
+	ScalarUnsignedShort: {schemaFormatInt32, bound(0), bound(math.MaxUint16)},
+	ScalarUnsignedInt:   {schemaFormatInt64, bound(0), bound(math.MaxUint32)},
+	ScalarLong:          {schemaFormatInt64, nil, nil},
+	ScalarUnsignedLong:  {"", bound(0), nil},
 }
 
 // customScalarSchema maps well-known custom scalar names to richer OpenAPI schemas.
@@ -332,7 +352,7 @@ func customScalarSchema(name string) *Schema {
 	if r, ok := integerScalars[name]; ok {
 		return integerSchema(r)
 	}
-	if name == "LocalDate" {
+	if name == ScalarLocalDate {
 		return &Schema{Type: schemaTypeString, Format: schemaFormatDate}
 	}
 	return &Schema{Type: schemaTypeString, XGraphQLScalar: name}
@@ -474,13 +494,13 @@ func integerSchema(r integerScalar) *Schema {
 // The second return value reports whether name was recognized.
 func builtinScalarSchema(name string) (*Schema, bool) {
 	switch name {
-	case "String", "ID":
+	case ScalarString, ScalarID:
 		return &Schema{Type: schemaTypeString}, true
-	case "Int":
+	case ScalarInt:
 		return &Schema{Type: schemaTypeInteger, Format: schemaFormatInt32}, true
-	case "Float":
+	case ScalarFloat:
 		return &Schema{Type: schemaTypeNumber, Format: schemaFormatFloat}, true
-	case "Boolean":
+	case ScalarBoolean:
 		return &Schema{Type: schemaTypeBoolean}, true
 	default:
 		return nil, false
