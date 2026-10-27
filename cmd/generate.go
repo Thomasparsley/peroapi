@@ -44,7 +44,7 @@ func init() {
 	generateCmd.Flags().StringVar(&flagMethod, "method-convention", "rest", `HTTP method strategy: "rest" (GET queries/POST mutations), "post", or "get"`)
 	generateCmd.Flags().StringVar(&flagBasePath, "base-path", "/api/graphql", "Base path prefix for all routes")
 	generateCmd.Flags().StringVar(&flagTitle, "title", "Generated API", "OpenAPI info.title")
-	generateCmd.Flags().StringVar(&flagVersion, "version", "1.1.0", "OpenAPI info.version")
+	generateCmd.Flags().StringVar(&flagVersion, "version", "1.0.0", "OpenAPI info.version")
 
 	_ = generateCmd.MarkFlagRequired("schema")
 	_ = generateCmd.MarkFlagRequired("operations")

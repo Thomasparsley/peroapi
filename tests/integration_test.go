@@ -33,7 +33,7 @@ func runPipeline(t *testing.T, convention string) *emitter.Document {
 	items, err := conv.Convert(ops, convention, "/api/graphql")
 	require.NoError(t, err)
 
-	return emitter.Build(items, conv.Components(), emitter.Options{Title: "Test API", Version: "1.1.0"})
+	return emitter.Build(items, conv.Components(), emitter.Options{Title: "Test API", Version: "1.0.0"})
 }
 
 // TestIntegration_CorrectNumberOfPaths verifies that the full pipeline produces exactly one
