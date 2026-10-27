@@ -1,6 +1,7 @@
 package converter_test
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 // the shapes the shared fixtures never cover.
 const abstractSchema = `
 scalar Byte
+scalar UnsignedByte
 
 enum LocalDate { TODAY TOMORROW }
 
@@ -39,6 +41,7 @@ type Query {
   node(id: ID!): Node
   search: [SearchResult!]!
   aByte: Byte
+  anUnsignedByte: UnsignedByte
   when: LocalDate
 }
 `
@@ -164,22 +167,29 @@ func TestConvert_SchemaTypeNotOverriddenByCustomScalarName(t *testing.T) {
 }
 
 // TestConvert_DeclaredCustomScalarMapping verifies that a scalar the schema actually declares
-// still receives its richer format mapping (Byte → integer 0..255).
+// still receives its richer format mapping (Byte → integer -128..127, UnsignedByte → 0..255).
 func TestConvert_DeclaredCustomScalarMapping(t *testing.T) {
 	s, _ := setup(t, abstractSchema)
 	ops := loadOps(t, s, map[string]string{
-		"B": `query B { aByte }`,
+		"B": `query B { aByte anUnsignedByte }`,
 	})
 
 	conv := converter.New(s)
 	items, err := conv.Convert(ops, "post", "/api")
 	require.NoError(t, err)
 
-	b := dataSchema(t, items[0]).Properties["aByte"]
-	require.NotNil(t, b)
-	assert.Equal(t, "integer", b.Type)
-	require.NotNil(t, b.Maximum)
-	assert.Equal(t, int64(255), *b.Maximum)
+	for field, bounds := range map[string][2]int64{
+		"aByte":          {math.MinInt8, math.MaxInt8},
+		"anUnsignedByte": {0, math.MaxUint8},
+	} {
+		b := dataSchema(t, items[0]).Properties[field]
+		require.NotNil(t, b, field)
+		assert.Equal(t, "integer", b.Type, field)
+		require.NotNil(t, b.Minimum, field)
+		assert.Equal(t, bounds[0], *b.Minimum, field)
+		require.NotNil(t, b.Maximum, field)
+		assert.Equal(t, bounds[1], *b.Maximum, field)
+	}
 }
 
 // TestConvert_MultipleOperationsPerEntryErrors verifies that a persisted entry containing more

@@ -99,6 +99,25 @@ type Mutation {
 }
 ```
 
+## Custom scalars
+
+Built-in scalars map to their OpenAPI equivalents. Custom scalars the schema declares are recognized by name:
+
+| Scalar | OpenAPI schema |
+| --- | --- |
+| `Byte` | `integer`/`int32`, -128 to 127 |
+| `UnsignedByte` | `integer`/`int32`, 0 to 255 |
+| `Short` | `integer`/`int32`, -32768 to 32767 |
+| `UnsignedShort` | `integer`/`int32`, 0 to 65535 |
+| `UnsignedInt` | `integer`/`int64`, 0 to 4294967295 |
+| `Long` | `integer`/`int64` |
+| `UnsignedLong` | `integer`, minimum 0 (the 2^64-1 maximum doesn't fit `int64`, so it is not declared) |
+| `LocalDate` | `string`/`date` |
+
+Any other custom scalar becomes a plain `string` with an `x-graphql-scalar: <Name>` extension.
+
+Names are matched literally and follow Hot Chocolate's conventions, where `Byte` is signed and `UnsignedByte` is unsigned. If your server gives a name different semantics, the generated range for that scalar is wrong.
+
 ## Examples
 
 Generate a spec using the default REST convention and write it to a file:

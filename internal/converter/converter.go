@@ -3,6 +3,7 @@ package converter
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -111,6 +112,7 @@ const (
 	schemaTypeBoolean = "boolean"
 
 	schemaFormatInt32 = "int32"
+	schemaFormatInt64 = "int64"
 	schemaFormatFloat = "float"
 	schemaFormatDate  = "date"
 
@@ -301,19 +303,39 @@ func withNullable(s *Schema) *Schema {
 	return s
 }
 
+// integerScalar describes the OpenAPI schema of a well-known custom integer scalar. A nil bound
+// means that side is unconstrained.
+type integerScalar struct {
+	format   string
+	min, max *int64
+}
+
+func bound(v int64) *int64 { return &v }
+
+// integerScalars maps well-known custom integer scalar names to their value ranges. Names follow
+// Hot Chocolate's scalar set, where Byte is signed (-128..127) and UnsignedByte is 0..255; servers
+// that use other semantics for the same name need a different mapping.
+// UnsignedLong's upper bound (2^64-1) does not fit int64, so only its lower bound is declared.
+var integerScalars = map[string]integerScalar{
+	"Byte":          {schemaFormatInt32, bound(math.MinInt8), bound(math.MaxInt8)},
+	"UnsignedByte":  {schemaFormatInt32, bound(0), bound(math.MaxUint8)},
+	"Short":         {schemaFormatInt32, bound(math.MinInt16), bound(math.MaxInt16)},
+	"UnsignedShort": {schemaFormatInt32, bound(0), bound(math.MaxUint16)},
+	"UnsignedInt":   {schemaFormatInt64, bound(0), bound(math.MaxUint32)},
+	"Long":          {schemaFormatInt64, nil, nil},
+	"UnsignedLong":  {"", bound(0), nil},
+}
+
 // customScalarSchema maps well-known custom scalar names to richer OpenAPI schemas.
 // Unrecognized scalars fall back to a plain string with an x-graphql-scalar extension.
 func customScalarSchema(name string) *Schema {
-	switch name {
-	case "UnsignedShort":
-		return boundedIntSchema(0, 65535)
-	case "Byte":
-		return boundedIntSchema(0, 255)
-	case "LocalDate":
-		return &Schema{Type: schemaTypeString, Format: schemaFormatDate}
-	default:
-		return &Schema{Type: schemaTypeString, XGraphQLScalar: name}
+	if r, ok := integerScalars[name]; ok {
+		return integerSchema(r)
 	}
+	if name == "LocalDate" {
+		return &Schema{Type: schemaTypeString, Format: schemaFormatDate}
+	}
+	return &Schema{Type: schemaTypeString, XGraphQLScalar: name}
 }
 
 // registerComponent assigns a component name for a selection shape identified by fingerprint,
@@ -442,9 +464,9 @@ func (c *Converter) refToComponent(name string, build func() (*Schema, error)) (
 	return &Schema{Ref: componentsSchemaPrefix + name}, nil
 }
 
-// boundedIntSchema returns an int32 schema constrained to [min, max].
-func boundedIntSchema(min, max int64) *Schema {
-	return &Schema{Type: schemaTypeInteger, Format: schemaFormatInt32, Minimum: &min, Maximum: &max}
+// integerSchema returns an integer schema with the format and bounds of r.
+func integerSchema(r integerScalar) *Schema {
+	return &Schema{Type: schemaTypeInteger, Format: r.format, Minimum: r.min, Maximum: r.max}
 }
 
 // builtinScalarSchema maps the GraphQL spec built-in scalars to OpenAPI schemas. These are fixed

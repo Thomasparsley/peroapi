@@ -2,6 +2,7 @@ package converter_test
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -323,20 +324,68 @@ func TestConvert_NewScalars(t *testing.T) {
 	require.NotNil(t, props["port"].Minimum)
 	require.NotNil(t, props["port"].Maximum)
 	assert.Equal(t, int64(0), *props["port"].Minimum)
-	assert.Equal(t, int64(65535), *props["port"].Maximum)
+	assert.Equal(t, int64(math.MaxUint16), *props["port"].Maximum)
 
-	// Byte → integer/int32 [0, 255]
+	// Byte → integer/int32 [-128, 127]
 	assert.Equal(t, "integer", props["flags"].Type)
 	assert.Equal(t, "int32", props["flags"].Format)
 	require.NotNil(t, props["flags"].Minimum)
 	require.NotNil(t, props["flags"].Maximum)
-	assert.Equal(t, int64(0), *props["flags"].Minimum)
-	assert.Equal(t, int64(255), *props["flags"].Maximum)
+	assert.Equal(t, int64(math.MinInt8), *props["flags"].Minimum)
+	assert.Equal(t, int64(math.MaxInt8), *props["flags"].Maximum)
 
 	// LocalDate → string/date
 	assert.Equal(t, "string", props["birthday"].Type)
 	assert.Equal(t, "date", props["birthday"].Format)
 	assert.Empty(t, props["birthday"].XGraphQLScalar)
+}
+
+// TestConvert_IntegerScalarRanges verifies every recognized integer scalar maps to its range
+// both as a non-null response field and as a non-null input variable. UnsignedLong has no
+// upper bound (2^64-1 does not fit int64) and Long is unbounded.
+func TestConvert_IntegerScalarRanges(t *testing.T) {
+	i64 := func(v int64) *int64 { return &v }
+	cases := []struct {
+		scalar, format string
+		min, max       *int64
+	}{
+		{"Byte", "int32", i64(math.MinInt8), i64(math.MaxInt8)},
+		{"UnsignedByte", "int32", i64(0), i64(math.MaxUint8)},
+		{"Short", "int32", i64(math.MinInt16), i64(math.MaxInt16)},
+		{"UnsignedShort", "int32", i64(0), i64(math.MaxUint16)},
+		{"UnsignedInt", "int64", i64(0), i64(math.MaxUint32)},
+		{"Long", "int64", nil, nil},
+		{"UnsignedLong", "", i64(0), nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.scalar, func(t *testing.T) {
+			// Arrange
+			s, _ := setup(t, "scalar "+tc.scalar+"\ntype Query { echo(v: "+tc.scalar+"!): "+tc.scalar+"! }")
+			ops := loadOps(t, s, map[string]string{
+				"Echo": "query Echo($v: " + tc.scalar + "!) { echo(v: $v) }",
+			})
+
+			// Act
+			items, err := converter.New(s).Convert(ops, "post", "/api")
+
+			// Assert
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			vars := items[0].RequestBody.Content["application/json"].Schema.Properties["variables"]
+			for name, got := range map[string]*converter.Schema{
+				"response": dataSchema(t, items[0]).Properties["echo"],
+				"variable": vars.Properties["v"],
+			} {
+				require.NotNil(t, got, name)
+				assert.Equal(t, "integer", got.Type, name)
+				assert.Equal(t, tc.format, got.Format, name)
+				assert.Equal(t, tc.min, got.Minimum, name)
+				assert.Equal(t, tc.max, got.Maximum, name)
+				assert.Empty(t, got.XGraphQLScalar, name)
+			}
+		})
+	}
 }
 
 const nullableSchema = `
